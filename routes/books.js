@@ -1,17 +1,18 @@
 const express = require('express');
 const router = express.Router();
 const request = require('request-promise');
-const parseString = require('xml2js').parseString;
+// const parseString = require('xml2js').parseString;
 const redis = require('redis');
 
-const redis_port = process.env.REDis_PORT || 6379;
-const client = redis.createClient(redis_port);
+const redis_port = process.env.REDIS_PORT || 6379;
+const redisClient = redis.createClient(redis_port);
+const api_key = process.env.GOOGLE_BOOKS_API_KEY
 
 // search cache middleware
 function searchCache(req, res, next) {
   const { query } = req.params;
 
-  client.get(query, (err, data) => {
+  redisClient.get(query, (err, data) => {
     if (err) throw err;
 
     if (data !== null) {
@@ -27,7 +28,7 @@ function searchCache(req, res, next) {
 function bookCache(req, res, next) {
   const { id } = req.params;
 
-  client.get(id, (err, data) => {
+  redisClient.get(id, (err, data) => {
     if (err) throw err;
 
     if (data !== null) {
@@ -39,29 +40,30 @@ function bookCache(req, res, next) {
   });
 }
 
+//main route
+router.get('/', (req, res) => {
+  res.send('This is a test response ...')
+  // console.log('Test response for base URL')
+})
+
 // Books search
 router.get('/books/:query', searchCache, (req, res) => {
   const { query } = req.params;
   request
     .get(
-      `https://www.goodreads.com/search/index.xml?key=${process.env.GOODREADS_API_KEY}&q=${query}`,
+      `https://www.googleapis.com/books/v1/volumes?q=${query}&key=${api_key}`,
     )
-    .then(result => {
-      parseString(result, (err, searchResult) => {
-        if (err) {
-          console.error(err);
-          res.status(401).json({ message: 'No Matchingg Books!' });
-        } else {
-          // set cache value
-          client.set(query, JSON.stringify(searchResult));
-          console.log('Fetching from API ..');
-          res.status(200).send(searchResult);
-        }
-      });
+    .then((result) => {
+      redisClient.set(query, result)
+      console.log('Fetching from API ..');
+      res.status(200).send(JSON.parse(result))
     })
-    .catch(err => {
-      console.error(err);
-      res.status(500).json({ message: 'Server Error' });
+    .catch((err) => {
+      // console.error(err);
+      res.status(500).json({
+        message: 'Server Error',
+        Error: err
+      });
     });
 });
 
@@ -70,25 +72,19 @@ router.get('/book/:id', bookCache, (req, res) => {
   const { id } = req.params;
   request
     .get(
-      `https://www.goodreads.com/book/show/${id}.xml?key=${process.env.GOODREADS_API_KEY}`,
+      `https://www.googleapis.com/books/v1/volumes/${id}?projection=lite&key=${api_key}`,
     )
-    .then(result => {
-      parseString(result, (err, bookresult) => {
-        if (err) {
-          console.error(err);
-          res.status(401).json({ message: 'Book Not Found!' });
-        } else {
-          const search = bookresult.GoodreadsResponse.book;
-          //store cached value
-          client.set(id, JSON.stringify(search));
-          console.log('Fetching from API..');
-          res.status(200).send(search);
-        }
-      });
+    .then((result) => {
+      redisClient.set(id, result)
+      console.log('Fetching data from API')
+      res.status(200).send(JSON.parse(result))
     })
-    .catch(err => {
-      console.error(err);
-      res.status(500).json({ message: 'Server Error!' });
+    .catch((err) => {
+      // console.error(err);
+      res.status(500).json({
+        message: 'Incorrect book ID, No book found for this ID!',
+        Error: err
+      });
     });
 });
 

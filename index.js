@@ -5,10 +5,10 @@ env.config({ path: './.env' });
 
 const app = express();
 
-//setip routes
+// setup routes
 app.use('/api/v1/', require('./routes/books'));
 
-// Setup server
+// setup server
 const port = process.env.PORT || 3000;
 
 app.listen(port, (req, res) => {
